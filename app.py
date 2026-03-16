@@ -60,4 +60,38 @@ if st.session_state.usuario_tipo == "admin":
     st.dataframe(st.session_state.pedidos, use_container_width=True)
 
 # --- VISTA JEFE DE ZONA ---
-elif st.
+elif st.session_state.usuario_tipo == "jefe_zona":
+    st.header("📝 Nuevo Pedido")
+    with st.form("registro"):
+        cliente = st.text_input("Nombre del Cliente")
+        d = st.number_input("Diesel (Gls)", min_value=0)
+        r = st.number_input("G-Regular (Gls)", min_value=0)
+        if st.form_submit_button("Enviar a Planta"):
+            nuevo = pd.DataFrame([{
+                'Fecha': pd.Timestamp.now().strftime("%d/%m %H:%M"),
+                'Asesor': 'Jefe Zona 1',
+                'Cliente': cliente,
+                'Diesel': d,
+                'G-Regular': r,
+                'Obs_Terminal': '',
+                'Estado': 'EN COLA'
+            }])
+            st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo], ignore_index=True)
+            st.success("Pedido registrado con éxito.")
+
+# --- VISTA TERMINAL ---
+elif st.session_state.usuario_tipo == "terminal":
+    st.header("🚛 Despacho en Planta")
+    st.info("Escriba en la columna 'Obs_Terminal' y presione 'Guardar'")
+    
+    # Tabla editable solo para observaciones
+    df_temp = st.data_editor(
+        st.session_state.pedidos,
+        disabled=['Fecha', 'Asesor', 'Cliente', 'Diesel', 'G-Regular', 'Estado'],
+        hide_index=True,
+        use_container_width=True
+    )
+    
+    if st.button("Guardar Cambios de Planta"):
+        st.session_state.pedidos = df_temp
+        st.success("Información de planta actualizada.")
