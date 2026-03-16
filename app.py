@@ -1,69 +1,93 @@
 import streamlit as st
 import pandas as pd
 
-# 1. CONFIGURACIÓN DE LA PÁGINA
-st.set_page_config(page_title="Primax - Control de Cuotas", layout="wide")
-st.title("⛽ Sistema de Gestión de Cuotas - White Pumpers")
+# 1. CONFIGURACIÓN Y ESTILOS
+st.set_page_config(page_title="Primax - Control de Crisis", layout="wide")
 
-# 2. BASE DE DATOS INICIAL (Simulando tu Excel)
-if 'df_pedidos' not in st.session_state:
-    data = {
-        'Fecha': ['16-Mar', '16-Mar', '16-Mar', '16-Mar'],
-        'Asesor': ['LIZZY VILLALON', 'CARLOS BALTA', 'ESPECIALES', 'SUR'],
-        'Cliente': ['NICANOR', 'SHALOM', 'ENERGIGAS S.A.C.', 'SUR'],
-        'Diesel': [1000, 2000, 6000, 7000],
-        'G-Regular': [1000, 2000, 3000, 0],
-        'Status': ['PENDIENTE', 'PENDIENTE', 'PENDIENTE / ESPECIALES', 'POR CONFIRMAR']
-    }
-    st.session_state.df_pedidos = pd.DataFrame(data)
+# Simulación de Base de Datos de Usuarios
+Usuarios = {
+    "admin": "primax2024",
+    "jefe_zona": "zona123",
+    "terminal": "pisco01"
+}
 
-# 3. DEFINICIÓN DE CUOTAS MÁXIMAS (La "Bolsa Valero")
-BOLSA_DIESEL = 241940
-BOLSA_REGULAR = 79490
+# 2. LOGIN EN LA BARRA LATERAL
+st.sidebar.title("🔐 Acceso al Sistema")
+user = st.sidebar.text_input("Usuario")
+password = st.sidebar.text_input("Contraseña", type="password")
 
-# 4. CÁLCULO DE CONSUMO EN TIEMPO REAL
-consumo_diesel = st.session_state.df_pedidos['Diesel'].sum()
-consumo_reg = st.session_state.df_pedidos['G-Regular'].sum()
+if password == Usuarios.get(user):
+    st.sidebar.success(f"Conectado como: {user.upper()}")
+    
+    # --- BASE DE DATOS TEMPORAL (En la vida real esto vendría de un Excel/DB) ---
+    if 'pedidos' not in st.session_state:
+        st.session_state.pedidos = pd.DataFrame(columns=['Fecha', 'Asesor', 'Cliente', 'Diesel', 'G-Regular', 'Obs_Terminal', 'Estado'])
+    if 'cuotas' not in st.session_state:
+        st.session_state.cuotas = {"Diesel": 241940, "G-Regular": 79490}
 
-# 5. HEADER VISUAL (Semáforos de Planta)
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Bolsa DIESEL", f"{BOLSA_DIESEL - consumo_diesel:,} Gls", "Disponible")
-    st.progress(min(consumo_diesel / BOLSA_DIESEL, 1.0))
-with col2:
-    st.metric("Bolsa G-REGULAR", f"{BOLSA_REGULAR - consumo_reg:,} Gls", "Disponible")
-    st.progress(min(consumo_reg / BOLSA_REGULAR, 1.0))
-with col3:
-    st.info("⚠️ **MODO CRISIS ACTIVO**: Control estricto de cuotas por planta.")
+    # ---------------------------------------------------------
+    # PERFIL 1: ADMINISTRADOR (Modifica Cuotas y Gestión Total)
+    # ---------------------------------------------------------
+    if user == "admin":
+        st.header("⚙️ Panel de Control de Cuotas (Admin)")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            nueva_c_diesel = st.number_input("Configurar Bolsa Diesel Total", value=st.session_state.cuotas["Diesel"])
+        with col2:
+            nueva_c_reg = st.number_input("Configurar Bolsa G-Regular Total", value=st.session_state.cuotas["G-Regular"])
+        
+        if st.button("Actualizar Cuotas Maestras"):
+            st.session_state.cuotas = {"Diesel": nueva_c_diesel, "G-Regular": nueva_c_reg}
+            st.success("Cuotas actualizadas para toda la gerencia.")
 
-st.divider()
+        st.divider()
+        st.subheader("Lista Global de Pedidos")
+        st.write(st.session_state.pedidos)
 
-# 6. TABLA DINÁMICA EDITABLE (El corazón de la App)
-st.subheader("📝 Registro de Pedidos Diario")
-df_editable = st.data_editor(
-    st.session_state.df_pedidos,
-    column_config={
-        "Status": st.column_config.SelectboxColumn(
-            "Estado",
-            options=["FACTURADO", "PENDIENTE", "AUTORIZADO", "RECHAZADO"],
-            required=True,
-        ),
-        "Diesel": st.column_config.NumberColumn("Diesel (Gls)", min_value=0),
-        "G-Regular": st.column_config.NumberColumn("G-Regular (Gls)", min_value=0),
-    },
-    num_rows="dynamic"
-)
+    # ---------------------------------------------------------
+    # PERFIL 2: JEFE DE ZONA (Ingreso de Pedidos)
+    # ---------------------------------------------------------
+    elif user == "jefe_zona":
+        st.header("📝 Registro de Pedidos - Jefe de Zona")
+        
+        with st.form("form_pedido"):
+            f_cliente = st.text_input("Nombre del Cliente")
+            f_diesel = st.number_input("Diesel (Gls)", min_value=0)
+            f_reg = st.number_input("G-Regular (Gls)", min_value=0)
+            enviar = st.form_submit_button("Registrar Pedido")
+            
+            if enviar:
+                nuevo_p = {
+                    'Fecha': pd.Timestamp.now().strftime("%d-%m"),
+                    'Asesor': 'JEFE_ZONA_1',
+                    'Cliente': f_cliente,
+                    'Diesel': f_diesel,
+                    'G-Regular': f_reg,
+                    'Obs_Terminal': '',
+                    'Estado': 'PENDIENTE'
+                }
+                st.session_state.pedidos = pd.concat([st.session_state.pedidos, pd.DataFrame([nuevo_p])], ignore_index=True)
+                st.success("Pedido enviado al Terminal.")
 
-# 7. BOTÓN DE CIERRE Y GUARDADO
-if st.button("💾 Guardar y Validar Cuotas"):
-    st.session_state.df_pedidos = df_editable
-    # Lógica de validación
-    if consumo_diesel > BOLSA_DIESEL:
-        st.error(f"¡ALERTA! Se ha superado la cuota de DIESEL por {consumo_diesel - BOLSA_DIESEL} galones.")
-    else:
-        st.success("Sincronización exitosa. Pedidos validados bajo cuota.")
+    # ---------------------------------------------------------
+    # PERFIL 3: TERMINAL (Validación y Observación)
+    # ---------------------------------------------------------
+    elif user == "terminal":
+        st.header("🚛 Panel de Despacho (Terminal)")
+        st.info("Solo edite la columna 'Obs_Terminal' para confirmar atención.")
+        
+        # El terminal solo puede editar la observación
+        df_terminal = st.data_editor(
+            st.session_state.pedidos,
+            disabled=['Fecha', 'Asesor', 'Cliente', 'Diesel', 'G-Regular', 'Estado'],
+            hide_index=True
+        )
+        
+        if st.button("Confirmar Atención de Planta"):
+            st.session_state.pedidos = df_terminal
+            st.success("Registros de terminal actualizados.")
 
-# 8. PANEL DE AUDITORÍA PARA GERENCIA
-with st.expander("🔍 Ver Resumen de Auditoría"):
-    resumen = st.session_state.df_pedidos.groupby('Asesor').sum(numeric_only=True)
-    st.table(resumen)
+else:
+    st.warning("Por favor, ingrese sus credenciales en la barra lateral.")
+    st.info("Credenciales de prueba:\n- admin / primax2024\n- jefe_zona / zona123\n- terminal / pisco01")
