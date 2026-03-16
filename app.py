@@ -1,45 +1,31 @@
 import streamlit as st
 import pandas as pd
 
-# 1. CONFIGURACIÓN DE PÁGINA
+# 1. CONFIGURACIÓN
 st.set_page_config(page_title="Primax Control Maestro", layout="wide")
 
-# Credenciales de acceso
-USUARIOS = {
-    "admin": "primax2024",
-    "jefe_zona": "zona123",
-    "terminal": "pisco01"
-}
+# Credenciales
+USUARIOS = {"admin": "primax2024", "jefe_zona": "zona123", "terminal": "pisco01"}
 
-# 2. INICIALIZACIÓN DE ESTADOS (Persistencia en sesión)
+# 2. INICIALIZACIÓN DE ESTADOS
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
-    st.session_state.user = None
+if 'pedidos' not in st.session_state:
+    st.session_state.pedidos = pd.DataFrame(columns=['Fecha', 'Planta', 'Asesor', 'Cliente', 'Diesel', 'Regular', 'Premium', 'Obs_Terminal', 'Estado'])
 
-# Listas maestras
-PLANTAS = ['Conchan', 'Callao', 'Valero', 'Pampilla']
-PRODUCTOS = ['Diesel', 'Regular', 'Premium']
+JEFES_ZONA = ['CARLOS BALTA', 'JORGE LIZARRAGA', 'JC RODRIGUEZ', 'LIZZY VILLALON', 'FREDY LINARES', 'NATHALIE HERRERA', 'SEIDA COTRINA']
 ESPECIALES_ZONAS = ['Energigas', 'Petrosur', 'Consorcio', 'MCP', 'Sur', 'Norte']
-JEFES_ZONA = [
-    'CARLOS BALTA', 'JORGE LIZARRAGA', 'JC RODRIGUEZ', 
-    'LIZZY VILLALON', 'FREDY LINARES', 'NATHALIE HERRERA', 'SEIDA COTRINA'
-]
+PRODUCTOS = ['Diesel', 'Regular', 'Premium']
 
-# Tablas de datos
+if 'cuotas_vendedores' not in st.session_state:
+    st.session_state.cuotas_vendedores = pd.DataFrame(0.0, index=JEFES_ZONA, columns=PRODUCTOS)
 if 'cuota_general' not in st.session_state:
     st.session_state.cuota_general = pd.DataFrame(0.0, index=['TOTAL GENERAL'], columns=PRODUCTOS)
 if 'cuotas_especiales' not in st.session_state:
     st.session_state.cuotas_especiales = pd.DataFrame(0.0, index=ESPECIALES_ZONAS, columns=PRODUCTOS)
-if 'cuotas_vendedores' not in st.session_state:
-    st.session_state.cuotas_vendedores = pd.DataFrame(0.0, index=JEFES_ZONA, columns=PRODUCTOS)
-if 'pedidos' not in st.session_state:
-    st.session_state.pedidos = pd.DataFrame(columns=[
-        'Fecha', 'Planta', 'Asesor', 'Cliente', 'Diesel', 'Regular', 'Premium', 'Obs_Terminal', 'Estado'
-    ])
 
-# 3. INTERFAZ DE LOGIN
+# 3. LOGIN
 if not st.session_state.autenticado:
-    st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Primax_logo.svg/1200px-Primax_logo.svg.png", width=150)
     st.sidebar.title("🔐 Acceso Sistema")
     u = st.sidebar.text_input("Usuario")
     p = st.sidebar.text_input("Contraseña", type="password")
@@ -48,103 +34,80 @@ if not st.session_state.autenticado:
             st.session_state.autenticado = True
             st.session_state.user = u
             st.rerun()
-        else:
-            st.sidebar.error("Datos incorrectos")
     st.stop()
 
-# Botón Salir
 if st.sidebar.button("Cerrar Sesión"):
     st.session_state.autenticado = False
     st.rerun()
 
-# 4. PANEL DE ADMINISTRADOR
+# 4. LÓGICA DE ADMINISTRADOR
 if st.session_state.user == "admin":
-    st.title("🎮 Panel Maestro de Distribución y Cuotas")
+    st.title("🎮 Panel Maestro de Distribución")
     
-    # --- SECCIÓN 1: CUOTA GENERAL ---
-    st.subheader("1️⃣ Configurar Cuota General (Techo Total)")
-    st.session_state.cuota_general = st.data_editor(st.session_state.cuota_general, key="ed_gen")
+    tab1, tab2 = st.tabs(["📊 Configuración de Cuotas", "📝 Lista de Pedidos"])
     
-    st.divider()
+    with tab1:
+        st.subheader("1. Techo Total General")
+        st.session_state.cuota_general = st.data_editor(st.session_state.cuota_general)
+        
+        st.subheader("2. Cuotas Especiales / Zonas")
+        st.session_state.cuotas_especiales = st.data_editor(st.session_state.cuotas_especiales)
+        
+        st.subheader("3. Cuotas Individuales Jefes de Zona")
+        st.info("Define aquí el límite exacto para cada vendedor.")
+        st.session_state.cuotas_vendedores = st.data_editor(st.session_state.cuotas_vendedores)
 
-    # --- SECCIÓN 2: CLIENTES ESPECIALES Y ZONAS ---
-    st.subheader("2️⃣ Asignación Especiales / MCP / Zonas")
-    st.session_state.cuotas_especiales = st.data_editor(st.session_state.cuotas_especiales, key="ed_esp", use_container_width=True)
-    
-    # LÓGICA DE CÁLCULO (CASCADA)
-    # Diesel
-    total_d = st.session_state.cuota_general.at['TOTAL GENERAL', 'Diesel']
-    esp_d = st.session_state.cuotas_especiales['Diesel'].sum()
-    disponible_vendedores_d = total_d - esp_d
-    
-    # Regular
-    total_r = st.session_state.cuota_general.at['TOTAL GENERAL', 'Regular']
-    esp_r = st.session_state.cuotas_especiales['Regular'].sum()
-    disponible_vendedores_r = total_r - esp_r
+    with tab2:
+        st.session_state.pedidos = st.data_editor(st.session_state.pedidos, num_rows="dynamic", use_container_width=True)
 
-    # Premium
-    total_p = st.session_state.cuota_general.at['TOTAL GENERAL', 'Premium']
-    esp_p = st.session_state.cuotas_especiales['Premium'].sum()
-    disponible_vendedores_p = total_p - esp_p
-
-    # --- MOSTRAR DISPONIBILIDAD PARA REGULARES ---
-    st.info(f"💡 **Saldo para Clientes Regulares (Jefes de Zona):** Diesel: {disponible_vendedores_d:,.0f} | Regular: {disponible_vendedores_r:,.0f} | Premium: {disponible_vendedores_p:,.0f}")
-    
-    st.divider()
-
-    # --- SECCIÓN 3: JEFES DE ZONA ---
-    st.subheader("3️⃣ Cuotas por Jefe de Zona (Regulares)")
-    st.session_state.cuotas_vendedores = st.data_editor(st.session_state.cuotas_vendedores, key="ed_vend", use_container_width=True)
-    
-    # Alerta de exceso
-    if st.session_state.cuotas_vendedores['Diesel'].sum() > disponible_vendedores_d:
-        st.error(f"🚨 EXCESO EN DIESEL: Has asignado {st.session_state.cuotas_vendedores['Diesel'].sum() - disponible_vendedores_d:,.0f} Gls de más.")
-
-    st.divider()
-
-    # --- SECCIÓN 4: TABLA DE PEDIDOS ---
-    st.subheader("📝 Lista Maestra de Pedidos (Editable)")
-    st.session_state.pedidos = st.data_editor(
-        st.session_state.pedidos,
-        num_rows="dynamic",
-        column_config={
-            "Planta": st.column_config.SelectboxColumn(options=PLANTAS),
-            "Asesor": st.column_config.SelectboxColumn(options=ESPECIALES_ZONAS + JEFES_ZONA),
-            "Estado": st.column_config.SelectboxColumn(options=['EN COLA', 'FACTURADO', 'OBSERVADO', 'RECHAZADO'])
-        },
-        use_container_width=True
-    )
-
-# --- PANEL JEFE DE ZONA ---
+# 5. LÓGICA DE JEFE DE ZONA (CON VALIDACIÓN DE BLOQUEO)
 elif st.session_state.user == "jefe_zona":
     st.title("📝 Registro de Pedidos")
-    with st.form("nuevo_pedido"):
-        planta = st.selectbox("Planta", PLANTAS)
+    
+    with st.form("form_registro"):
+        vendedor = st.selectbox("Seleccione su Nombre", JEFES_ZONA)
+        planta = st.selectbox("Planta", ['Conchan', 'Callao', 'Valero', 'Pampilla'])
         cliente = st.text_input("Cliente")
-        vendedor = st.selectbox("Tu Nombre (Jefe de Zona)", JEFES_ZONA)
-        c1, c2, c3 = st.columns(3)
-        d = c1.number_input("Diesel (Gls)", min_value=0.0)
-        r = c2.number_input("Regular (Gls)", min_value=0.0)
-        p = c3.number_input("Premium (Gls)", min_value=0.0)
         
-        if st.form_submit_button("Registrar Pedido"):
-            nuevo = pd.DataFrame([{
-                'Fecha': pd.Timestamp.now().strftime("%d/%m %H:%M"),
-                'Planta': planta, 'Asesor': vendedor, 'Cliente': cliente,
-                'Diesel': d, 'Regular': r, 'Premium': p,
-                'Obs_Terminal': '', 'Estado': 'EN COLA'
-            }])
-            st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo], ignore_index=True)
-            st.success("Pedido enviado correctamente.")
+        c1, c2, c3 = st.columns(3)
+        d_p = c1.number_input("Diesel (Gls)", min_value=0.0)
+        r_p = c2.number_input("Regular (Gls)", min_value=0.0)
+        p_p = c3.number_input("Premium (Gls)", min_value=0.0)
+        
+        if st.form_submit_button("Validar y Enviar Pedido"):
+            # --- CÁLCULO DE VALIDACIÓN ---
+            # 1. Obtener la cuota asignada por el admin para este vendedor
+            cuota_d = st.session_state.cuotas_vendedores.loc[vendedor, 'Diesel']
+            cuota_r = st.session_state.cuotas_vendedores.loc[vendedor, 'Regular']
+            cuota_p = st.session_state.cuotas_vendedores.loc[vendedor, 'Premium']
+            
+            # 2. Sumar lo que ya ha pedido hoy
+            ya_pedido_d = st.session_state.pedidos[st.session_state.pedidos['Asesor'] == vendedor]['Diesel'].sum()
+            ya_pedido_r = st.session_state.pedidos[st.session_state.pedidos['Asesor'] == vendedor]['Regular'].sum()
+            ya_pedido_p = st.session_state.pedidos[st.session_state.pedidos['Asesor'] == vendedor]['Premium'].sum()
+            
+            # 3. Verificar excesos
+            exceso_d = (ya_pedido_d + d_p) > cuota_d
+            exceso_r = (ya_pedido_r + r_p) > cuota_r
+            exceso_p = (ya_pedido_p + p_p) > cuota_p
+            
+            if exceso_d or exceso_r or exceso_p:
+                st.error(f"🚫 **PEDIDO RECHAZADO**: Estás superando tu cuota asignada.")
+                if exceso_d: st.write(f"- Diesel: Tienes {cuota_d - ya_pedido_d:,.0f} Gls disponibles.")
+                if exceso_r: st.write(f"- Regular: Tienes {cuota_r - ya_pedido_r:,.0f} Gls disponibles.")
+                if exceso_p: st.write(f"- Premium: Tienes {cuota_p - ya_pedido_p:,.0f} Gls disponibles.")
+            else:
+                # Si todo está bien, se guarda
+                nuevo = pd.DataFrame([{
+                    'Fecha': pd.Timestamp.now().strftime("%d/%m %H:%M"),
+                    'Planta': planta, 'Asesor': vendedor, 'Cliente': cliente,
+                    'Diesel': d_p, 'Regular': r_p, 'Premium': p_p,
+                    'Obs_Terminal': '', 'Estado': 'APROBADO'
+                }])
+                st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo], ignore_index=True)
+                st.success(f"✅ Pedido de {vendedor} registrado exitosamente.")
 
-# --- PANEL TERMINAL ---
+# 6. VISTA TERMINAL
 elif st.session_state.user == "terminal":
-    st.title("🚛 Validación Planta")
-    df_t = st.data_editor(
-        st.session_state.pedidos,
-        disabled=['Fecha', 'Planta', 'Asesor', 'Cliente', 'Diesel', 'Regular', 'Premium', 'Estado'],
-        use_container_width=True
-    )
-    if st.button("Actualizar Observaciones"):
-        st.session_state.pedidos = df_t
-        st.success("Datos guardados.")
+    st.title("🚛 Despacho")
+    st.data_editor(st.session_state.pedidos, disabled=['Fecha', 'Planta', 'Asesor', 'Cliente', 'Diesel', 'Regular', 'Premium', 'Estado'])
