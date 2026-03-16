@@ -2,10 +2,13 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-st.set_page_config(page_title="Primax - Dashboard de Crisis", layout="wide")
+# 1. CONFIGURACIÓN
+st.set_page_config(page_title="Primax Control Maestro", layout="wide")
 
-# 1. CREDENCIALES Y LISTAS
+# Credenciales
 USUARIOS = {"admin": "primax2024", "jefe_zona": "zona123", "terminal": "pisco01"}
+
+# Listas Maestras
 PLANTAS = ['Conchan', 'Callao', 'Valero', 'Pampilla']
 JEFES_ZONA = ['CARLOS BALTA', 'JORGE LIZARRAGA', 'JC RODRIGUEZ', 'LIZZY VILLALON', 'FREDY LINARES', 'NATHALIE HERRERA', 'SEIDA COTRINA']
 ESPECIALES_ZONAS = ['Energigas', 'Petrosur', 'Consorcio', 'MCP', 'Sur', 'Norte']
@@ -34,74 +37,75 @@ if not st.session_state.autenticado:
 
 # 4. PANEL ADMINISTRADOR
 if st.session_state.user == "admin":
-    st.title("⛽ Gestión Integral de Combustible")
+    st.title("⛽ Sistema de Control de Cuotas")
     
-    tab1, tab2, tab3 = st.tabs(["⚙️ Configuración y Registro", "📈 Dashboards de Control", "🚛 Vista Terminal"])
+    tab1, tab2 = st.tabs(["📝 Gestión y Registro", "📊 Dashboards de Avance"])
 
     with tab1:
-        st.subheader("Configurar Límites y Registrar Pedidos")
-        st.session_state.cuotas_vendedores = st.data_editor(st.session_state.cuotas_vendedores, key="cuotas_edit")
-        st.divider()
-        df_temp = st.data_editor(st.session_state.pedidos, num_rows="dynamic", use_container_width=True, key="pedidos_edit",
-                                 column_config={"Asesor": st.column_config.SelectboxColumn(options=TODOS_LOS_ASESORES, required=True)})
+        st.subheader("Configuración de Cuotas y Pedidos")
+        # Editor de Cuotas
+        st.session_state.cuotas_vendedores = st.data_editor(st.session_state.cuotas_vendedores, key="edit_cuotas_v3")
         
-        if st.button("💾 Validar y Guardar Cambios"):
+        st.divider()
+        
+        # Editor de Pedidos
+        df_temp = st.data_editor(
+            st.session_state.pedidos,
+            num_rows="dynamic",
+            column_config={
+                "Asesor": st.column_config.SelectboxColumn("Asesor", options=TODOS_LOS_ASESORES, required=True),
+                "Planta": st.column_config.SelectboxColumn("Planta", options=PLANTAS)
+            },
+            use_container_width=True,
+            key="edit_pedidos_v3"
+        )
+        
+        if st.button("💾 Validar y Guardar"):
+            # Limpieza y validación
             df_temp[['Diesel', 'Regular', 'Premium']] = df_temp[['Diesel', 'Regular', 'Premium']].fillna(0).astype(float)
-            errores = [a for a in TODOS_LOS_ASESORES if df_temp[df_temp['Asesor']==a]['Diesel'].sum() > st.session_state.cuotas_vendedores.loc[a, 'Diesel']]
+            errores = []
+            for asesor in TODOS_LOS_ASESORES:
+                limite = float(st.session_state.cuotas_vendedores.loc[asesor, 'Diesel'])
+                consumo = df_temp[df_temp['Asesor'] == asesor]['Diesel'].sum()
+                if consumo > limite:
+                    errores.append(asesor)
+            
             if errores:
-                for a in errores: st.error(f"⚠️ {a}: Estás excediendo la cuota asignada, por favor validar")
+                for a in errores:
+                    st.error(f"⚠️ {a}: Estás excediendo la cuota asignada, por favor validar")
             else:
                 st.session_state.pedidos = df_temp
-                st.success("✅ Cambios guardados.")
+                st.success("✅ Datos guardados correctamente.")
 
     with tab2:
-        st.header("📊 Avance de Cuotas en Tiempo Real")
+        st.header("📈 Visualización de Consumo")
         
-        # --- CÁLCULOS PARA EL DASHBOARD ---
-        df_resumen = []
+        # Preparar datos para gráficos
+        datos_grafico = []
         for a in TODOS_LOS_ASESORES:
             utilizado = st.session_state.pedidos[st.session_state.pedidos['Asesor'] == a]['Diesel'].sum()
-            maximo = st.session_state.cuotas_vendedores.loc[a, 'Diesel']
-            disponible = maximo - utilizado
-            df_resumen.append({"Asesor": a, "Utilizado": utilizado, "Máximo": maximo, "Disponible": disponible})
+            cuota = st.session_state.cuotas_vendedores.loc[a, 'Diesel']
+            datos_grafico.append({"Asesor": a, "Estado": "Consumido", "Cantidad": utilizado})
+            datos_grafico.append({"Asesor": a, "Estado": "Disponible", "Cantidad": max(0, cuota - utilizado)})
         
-        df_dash = pd.DataFrame(df_resumen)
+        df_plot = pd.DataFrame(datos_grafico)
 
-        # MÉTRICAS GENERALES
-        c1, c2, c3 = st.columns(3)
-        total_u = df_dash['Utilizado'].sum()
-        total_m = df_dash['Máximo'].sum()
-        c1.metric("Total Diesel Utilizado", f"{total_u:,.0f} Gls")
-        c2.metric("Total Cuota Asignada", f"{total_m:,.0f} Gls")
-        c3.metric("Saldo Global", f"{total_m - total_u:,.0f} Gls", delta_color="normal")
-
-        st.divider()
-
-        # GRÁFICO 1: COMPARATIVA POR JEFE DE ZONA
-        st.subheader("⛽ Utilizado vs Cuota Máxima por Asesor (Diesel)")
-        fig = px.bar(df_dash, x="Asesor", y=["Utilizado", "Disponible"], 
-                     title="Distribución de Consumo",
-                     color_discrete_map={"Utilizado": "#EF553B", "Disponible": "#00CC96"},
+        # Gráfico de Barras
+        fig = px.bar(df_plot, x="Asesor", y="Cantidad", color="Estado", 
+                     title="Consumo de Diesel por Jefe de Zona / Especiales",
+                     color_discrete_map={"Consumido": "#FF4B4B", "Disponible": "#00CC96"},
                      barmode="stack")
         st.plotly_chart(fig, use_container_width=True)
-
-        # GRÁFICO 2: AVANCE GENERAL (PIE CHART)
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.subheader("📈 Avance de Consumo General")
-            fig_pie = px.pie(values=[total_u, total_m - total_u], names=['Consumido', 'Disponible'],
-                             color_discrete_sequence=['#EF553B', '#00CC96'], hole=0.4)
-            st.plotly_chart(fig_pie)
         
-        with col_b:
-            st.subheader("📋 Tabla de Cumplimiento")
-            df_dash['% Avance'] = (df_dash['Utilizado'] / df_dash['Máximo'] * 100).fillna(0)
-            st.dataframe(df_dash[['Asesor', 'Utilizado', 'Máximo', '% Avance']].style.format({"% Avance": "{:.1f}%"}))
+        # Tabla resumen
+        st.subheader("Resumen de Cumplimiento")
+        resumen_final = pd.DataFrame({
+            "Cuota Total": st.session_state.cuotas_vendedores['Diesel'],
+            "Consumido": [st.session_state.pedidos[st.session_state.pedidos['Asesor']==a]['Diesel'].sum() for a in TODOS_LOS_ASESORES]
+        })
+        resumen_final['% Avance'] = (resumen_final['Consumido'] / resumen_final['Cuota Total'] * 100).fillna(0)
+        st.dataframe(resumen_final.style.format("{:.1f}%", subset=["% Avance"]))
 
-    with tab3:
-        st.header("🚛 Validación Terminal Pisco")
-        st.dataframe(st.session_state.pedidos)
-
-else:
-    st.title("Vista Consulta")
-    st.dataframe(st.session_state.pedidos)
+if st.sidebar.button("Cerrar Sesión"):
+    st.session_state.autenticado = False
+    st.rerun()
