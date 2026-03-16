@@ -17,9 +17,10 @@ PRODUCTOS = ['Diesel', 'Regular', 'Premium']
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 if 'pedidos' not in st.session_state:
-    st.session_state.pedidos = pd.DataFrame(columns=['Fecha', 'Planta', 'Asesor', 'Cliente', 'Diesel', 'Regular', 'Premium', 'Obs_Terminal', 'Estado'])
+    st.session_state.pedidos = pd.DataFrame(columns=['Fecha', 'Planta', 'Asesor', 'Cliente', 'Diesel', 'Regular', 'Premium', 'Estado'])
 if 'cuotas_vendedores' not in st.session_state:
-    st.session_state.cuotas_vendedores = pd.DataFrame(0.0, index=JEFES_ZONA, columns=PRODUCTOS)
+    # Inicializamos con ceros para evitar errores de referencia
+    st.session_state.cuotas_vendedores = pd.DataFrame(0.0, index=TODOS_LOS_ASESORES, columns=PRODUCTOS)
 
 # 4. LOGIN
 if not st.session_state.autenticado:
@@ -35,19 +36,21 @@ if not st.session_state.autenticado:
 
 # 5. PANEL ADMINISTRADOR
 if st.session_state.user == "admin":
-    st.title("🎮 Panel Administrador")
+    st.title("🎮 Panel Administrador - Control de Cuotas")
     
     # --- SECCIÓN CUOTAS ---
-    st.subheader("⚙️ Configuración de Cuotas Máximas")
-    st.session_state.cuotas_vendedores = st.data_editor(st.session_state.cuotas_vendedores, key="editor_cuotas")
+    st.subheader("⚙️ 1. Definir Cuotas Límites")
+    st.info("Escriba aquí los límites permitidos para cada asesor/zona.")
+    st.session_state.cuotas_vendedores = st.data_editor(st.session_state.cuotas_vendedores, key="ed_cuotas_v")
     
     st.divider()
 
-    # --- SECCIÓN PEDIDOS CON LISTA DESPLEGABLE ---
-    st.subheader("📝 Lista Maestra de Pedidos")
-    st.info("Para agregar un pedido, use la última fila. Seleccione el ASESOR de la lista desplegable.")
+    # --- SECCIÓN PEDIDOS ---
+    st.subheader("📝 2. Registro de Pedidos")
+    st.warning("Nota: Después de editar, debe hacer clic en el botón 'Validar y Guardar'.")
     
-    df_editado = st.data_editor(
+    # Capturamos la edición en una variable temporal
+    df_input = st.data_editor(
         st.session_state.pedidos,
         num_rows="dynamic",
         column_config={
@@ -56,30 +59,40 @@ if st.session_state.user == "admin":
             "Estado": st.column_config.SelectboxColumn("Estado", options=['EN COLA', 'FACTURADO', 'RECHAZADO'])
         },
         use_container_width=True,
-        key="editor_pedidos"
+        key="ed_pedidos_v"
     )
 
-    # --- BOTÓN DE VALIDACIÓN Y GUARDADO ---
+    # --- BOTÓN DE VALIDACIÓN CRÍTICA ---
     if st.button("💾 Validar y Guardar Cambios"):
-        errores = []
-        # Revisar cada jefe de zona
-        for jefe in JEFES_ZONA:
-            cuota_max = st.session_state.cuotas_vendedores.loc[jefe, 'Diesel']
-            total_pedido = df_editado[df_editado['Asesor'] == jefe]['Diesel'].sum()
-            
-            if total_pedido > cuota_max:
-                errores.append(f"❌ {jefe}: Pedido total ({total_pedido:,}) supera cuota ({cuota_max:,})")
+        hay_error = False
         
-        if errores:
-            for e in errores:
-                st.error(e)
-            st.warning("Los cambios NO se han guardado permanentemente debido a los excesos.")
+        # Revisamos cada asesor para ver si se pasó de su cuota
+        for asesor in TODOS_LOS_ASESORES:
+            # Cuotas definidas
+            limite_d = st.session_state.cuotas_vendedores.loc[asesor, 'Diesel']
+            limite_r = st.session_state.cuotas_vendedores.loc[asesor, 'Regular']
+            limite_p = st.session_state.cuotas_vendedores.loc[asesor, 'Premium']
+            
+            # Suma de lo ingresado en la tabla
+            suma_d = df_input[df_input['Asesor'] == asesor]['Diesel'].sum()
+            suma_r = df_input[df_input['Asesor'] == asesor]['Regular'].sum()
+            suma_p = df_input[df_input['Asesor'] == asesor]['Premium'].sum()
+            
+            # Validación
+            if suma_d > limite_d or suma_r > limite_r or suma_p > limite_p:
+                st.error(f"⚠️ {asesor}: Estás excediendo la cuota asignada, por favor validar")
+                hay_error = True
+        
+        if not hay_error:
+            st.session_state.pedidos = df_input
+            st.success("✅ Datos guardados correctamente. Cuotas respetadas.")
         else:
-            st.session_state.pedidos = df_editado
-            st.success("✅ ¡Validación exitosa! Todos los pedidos están dentro de la cuota.")
+            st.warning("🛑 No se guardaron los cambios. Corrija las cantidades en rojo.")
 
-# --- VISTA JEFE DE ZONA (PARA PRUEBAS) ---
-elif st.session_state.user == "jefe_zona":
-    st.title("Vista Jefe de Zona")
-    st.write("Usted solo puede ver los pedidos actuales.")
+# --- VISTA OTROS ROLES ---
+else:
+    st.title(f"Vista {st.session_state.user.upper()}")
     st.dataframe(st.session_state.pedidos)
+    if st.sidebar.button("Salir"):
+        st.session_state.autenticado = False
+        st.rerun()
