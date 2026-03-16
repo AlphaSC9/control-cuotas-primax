@@ -1,111 +1,101 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 
-# 1. CONFIGURACIÓN
-st.set_page_config(page_title="Primax Control Maestro", layout="wide")
+# 1. CONFIGURACIÓN INICIAL
+st.set_page_config(page_title="Primax Control", layout="wide")
 
 # Credenciales
 USUARIOS = {"admin": "primax2024", "jefe_zona": "zona123", "terminal": "pisco01"}
 
 # Listas Maestras
-PLANTAS = ['Conchan', 'Callao', 'Valero', 'Pampilla']
 JEFES_ZONA = ['CARLOS BALTA', 'JORGE LIZARRAGA', 'JC RODRIGUEZ', 'LIZZY VILLALON', 'FREDY LINARES', 'NATHALIE HERRERA', 'SEIDA COTRINA']
-ESPECIALES_ZONAS = ['Energigas', 'Petrosur', 'Consorcio', 'MCP', 'Sur', 'Norte']
-TODOS_LOS_ASESORES = ESPECIALES_ZONAS + JEFES_ZONA
+ESPECIALES = ['Energigas', 'Petrosur', 'Consorcio', 'MCP', 'Sur', 'Norte']
+TODOS = ESPECIALES + JEFES_ZONA
 PRODUCTOS = ['Diesel', 'Regular', 'Premium']
 
-# 2. INICIALIZACIÓN DE DATOS
+# 2. INICIALIZAR SESIÓN (Evita errores de variables no encontradas)
 if 'pedidos' not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=['Fecha', 'Planta', 'Asesor', 'Cliente', 'Diesel', 'Regular', 'Premium', 'Estado'])
-if 'cuotas_vendedores' not in st.session_state:
-    st.session_state.cuotas_vendedores = pd.DataFrame(0.0, index=TODOS_LOS_ASESORES, columns=PRODUCTOS)
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
 
-# 3. LOGIN
-if not st.session_state.autenticado:
-    st.sidebar.title("🔐 Acceso Primax")
+if 'cuotas' not in st.session_state:
+    st.session_state.cuotas = pd.DataFrame(0.0, index=TODOS, columns=PRODUCTOS)
+
+if 'auth' not in st.session_state:
+    st.session_state.auth = False
+
+# 3. LOGIN SIMPLE
+if not st.session_state.auth:
+    st.sidebar.title("⛽ Acceso Primax")
     u = st.sidebar.text_input("Usuario")
     p = st.sidebar.text_input("Contraseña", type="password")
     if st.sidebar.button("Ingresar"):
         if USUARIOS.get(u) == p:
-            st.session_state.autenticado = True
+            st.session_state.auth = True
             st.session_state.user = u
             st.rerun()
     st.stop()
 
 # 4. PANEL ADMINISTRADOR
 if st.session_state.user == "admin":
-    st.title("⛽ Sistema de Control de Cuotas")
+    st.title("🎮 Panel Maestro")
     
-    tab1, tab2 = st.tabs(["📝 Gestión y Registro", "📊 Dashboards de Avance"])
+    t1, t2, t3 = st.tabs(["⚙️ Cuotas y Pedidos", "📊 Dashboards", "🚛 Terminal"])
 
-    with tab1:
-        st.subheader("Configuración de Cuotas y Pedidos")
-        # Editor de Cuotas
-        st.session_state.cuotas_vendedores = st.data_editor(st.session_state.cuotas_vendedores, key="edit_cuotas_v3")
+    with t1:
+        st.subheader("1. Configurar Límites")
+        st.session_state.cuotas = st.data_editor(st.session_state.cuotas, key="c_edit")
         
         st.divider()
+        st.subheader("2. Registrar Pedidos")
+        df_input = st.data_editor(st.session_state.pedidos, num_rows="dynamic", key="p_edit", use_container_width=True,
+                                  column_config={"Asesor": st.column_config.SelectboxColumn(options=TODOS)})
         
-        # Editor de Pedidos
-        df_temp = st.data_editor(
-            st.session_state.pedidos,
-            num_rows="dynamic",
-            column_config={
-                "Asesor": st.column_config.SelectboxColumn("Asesor", options=TODOS_LOS_ASESORES, required=True),
-                "Planta": st.column_config.SelectboxColumn("Planta", options=PLANTAS)
-            },
-            use_container_width=True,
-            key="edit_pedidos_v3"
-        )
-        
-        if st.button("💾 Validar y Guardar"):
-            # Limpieza y validación
-            df_temp[['Diesel', 'Regular', 'Premium']] = df_temp[['Diesel', 'Regular', 'Premium']].fillna(0).astype(float)
-            errores = []
-            for asesor in TODOS_LOS_ASESORES:
-                limite = float(st.session_state.cuotas_vendedores.loc[asesor, 'Diesel'])
-                consumo = df_temp[df_temp['Asesor'] == asesor]['Diesel'].sum()
-                if consumo > limite:
-                    errores.append(asesor)
+        if st.button("💾 VALIDAR Y GUARDAR"):
+            # Limpiar datos para evitar errores de suma
+            df_clean = df_input.copy()
+            for prod in PRODUCTOS:
+                df_clean[prod] = pd.to_numeric(df_clean[prod]).fillna(0)
             
-            if errores:
-                for a in errores:
-                    st.error(f"⚠️ {a}: Estás excediendo la cuota asignada, por favor validar")
+            error_msg = []
+            for asesor in TODOS:
+                for prod in PRODUCTOS:
+                    limite = float(st.session_state.cuotas.loc[asesor, prod])
+                    consumo = df_clean[df_clean['Asesor'] == asesor][prod].sum()
+                    if consumo > limite:
+                        error_msg.append(f"⚠️ {asesor}: Estás excediendo la cuota asignada en {prod}, por favor validar")
+            
+            if error_msg:
+                for m in error_msg: st.error(m)
             else:
-                st.session_state.pedidos = df_temp
-                st.success("✅ Datos guardados correctamente.")
+                st.session_state.pedidos = df_clean
+                st.success("✅ ¡Guardado con éxito!")
 
-    with tab2:
-        st.header("📈 Visualización de Consumo")
+    with t2:
+        st.header("📈 Avance de Consumo")
         
-        # Preparar datos para gráficos
-        datos_grafico = []
-        for a in TODOS_LOS_ASESORES:
-            utilizado = st.session_state.pedidos[st.session_state.pedidos['Asesor'] == a]['Diesel'].sum()
-            cuota = st.session_state.cuotas_vendedores.loc[a, 'Diesel']
-            datos_grafico.append({"Asesor": a, "Estado": "Consumido", "Cantidad": utilizado})
-            datos_grafico.append({"Asesor": a, "Estado": "Disponible", "Cantidad": max(0, cuota - utilizado)})
+        # Crear tabla de resumen para gráficos
+        resumen = []
+        for a in TODOS:
+            cons = st.session_state.pedidos[st.session_state.pedidos['Asesor'] == a]['Diesel'].sum()
+            lim = st.session_state.cuotas.loc[a, 'Diesel']
+            resumen.append({"Asesor": a, "Consumido": cons, "Disponible": max(0, lim - cons)})
         
-        df_plot = pd.DataFrame(datos_grafico)
+        df_res = pd.DataFrame(resumen).set_index("Asesor")
+        
+        # Métricas rápidas
+        c1, c2 = st.columns(2)
+        c1.metric("Total Diesel Pedido", f"{df_res['Consumido'].sum():,.0f} Gls")
+        c2.metric("Total Cuota Disponible", f"{df_res['Disponible'].sum():,.0f} Gls")
 
-        # Gráfico de Barras
-        fig = px.bar(df_plot, x="Asesor", y="Cantidad", color="Estado", 
-                     title="Consumo de Diesel por Jefe de Zona / Especiales",
-                     color_discrete_map={"Consumido": "#FF4B4B", "Disponible": "#00CC96"},
-                     barmode="stack")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Tabla resumen
-        st.subheader("Resumen de Cumplimiento")
-        resumen_final = pd.DataFrame({
-            "Cuota Total": st.session_state.cuotas_vendedores['Diesel'],
-            "Consumido": [st.session_state.pedidos[st.session_state.pedidos['Asesor']==a]['Diesel'].sum() for a in TODOS_LOS_ASESORES]
-        })
-        resumen_final['% Avance'] = (resumen_final['Consumido'] / resumen_final['Cuota Total'] * 100).fillna(0)
-        st.dataframe(resumen_final.style.format("{:.1f}%", subset=["% Avance"]))
+        # Gráfico de barras nativo (sin Plotly para evitar errores)
+        st.subheader("Consumo de Diesel por Asesor")
+        st.bar_chart(df_res[['Consumido', 'Disponible']])
 
+    with t3:
+        st.subheader("🚛 Lista para Planta")
+        st.dataframe(st.session_state.pedidos)
+
+# BOTÓN CERRAR SESIÓN
 if st.sidebar.button("Cerrar Sesión"):
-    st.session_state.autenticado = False
+    st.session_state.auth = False
     st.rerun()
